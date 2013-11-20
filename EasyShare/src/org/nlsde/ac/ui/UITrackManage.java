@@ -7,6 +7,7 @@ import java.awt.event.ActionListener;
 import java.awt.event.MouseAdapter;
 import java.awt.event.MouseEvent;
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.List;
 import java.util.Observable;
 import java.util.Observer;
@@ -58,7 +59,8 @@ public class UITrackManage extends JPanel implements ActionListener,
 		dataList = new JList<String>();
 		dataList.setListData(dataManage.getAllSecurityVectorDatas());
 		dataList.addListSelectionListener(this);
-		dataList.addMouseListener(new MouseListListener());
+		dataList.addMouseListener(new ListClickListener());
+		dataList.addMouseMotionListener(new LocalDataTipsListener());
 		dataList.setSelectionMode(ListSelectionModel.SINGLE_SELECTION);
 		JScrollPane leftJSP = new JScrollPane(dataList);
 		leftJSP.setPreferredSize(new Dimension(250, 400));
@@ -73,6 +75,7 @@ public class UITrackManage extends JPanel implements ActionListener,
 		Object[] columnTitle = {"时间", "类型", "版本", "来源", "内容"};
 		trackTable = new JTable(tableContent, columnTitle);
 		resizeColumnLength(trackTable);
+		trackTable.addMouseMotionListener(new TableTipsListener());
 		JScrollPane tableJSP = new JScrollPane(trackTable);
 		tableJSP.setBorder(BorderFactory.createTitledBorder("数据访问信息"));
 		centerPanel.add(tableJSP, BorderLayout.CENTER);
@@ -83,7 +86,7 @@ public class UITrackManage extends JPanel implements ActionListener,
 		trackTable.getColumnModel().getColumn(0).setPreferredWidth(125);
 		trackTable.getColumnModel().getColumn(1).setPreferredWidth(40);
 		trackTable.getColumnModel().getColumn(2).setPreferredWidth(80);
-		trackTable.getColumnModel().getColumn(3).setPreferredWidth(110);
+		trackTable.getColumnModel().getColumn(3).setPreferredWidth(115);
 		trackTable.getColumnModel().getColumn(4).setPreferredWidth(155);	
 	}
 
@@ -106,10 +109,11 @@ public class UITrackManage extends JPanel implements ActionListener,
 			if (selectData != null) {
 				allTracks.addAll(selectData.getAccessTracks());
 				List<FacetTrack> rwTracks = selectData.getReadWriteTracks();
+				
 				if (!rwTracks.isEmpty()) {
 					allTracks.addAll(rwTracks);
 				}
-				
+				Collections.sort(allTracks);
 				trackTable.setModel(new TrackTableModel(allTracks));
 				resizeColumnLength(trackTable);
 				trackTable.updateUI();
@@ -126,7 +130,7 @@ public class UITrackManage extends JPanel implements ActionListener,
 		
 	}
 
-	private class MouseListListener extends MouseAdapter {
+	class ListClickListener extends MouseAdapter {
 		private JList<String> dataList;
 		// the return value of e.getButton() is 1，2，3
 		// 1: mouse left key; 3: mouse right key
@@ -142,10 +146,50 @@ public class UITrackManage extends JPanel implements ActionListener,
 			// mouse left double key.
 			if (dataList.getSelectedIndex() != -1) {
 				if (e.getClickCount() == 2) {
-					
+					// TODO
 				}
 			}
 		}
+	}
+	
+	class TableTipsListener extends MouseAdapter {
+		public void mouseMoved(MouseEvent me) {
+			int row = trackTable.rowAtPoint(me.getPoint());
+			int column = trackTable.columnAtPoint(me.getPoint());
+			if (row > -1 && column > -1) {
+				Object value = trackTable.getValueAt(row, column);
+				if ( null != value && !"".equals(value)) {
+					trackTable.setToolTipText(value.toString());
+				}
+				else {
+					trackTable.setToolTipText(null);
+				}
+			}
+		}
+	}
+	
+	class LocalDataTipsListener extends MouseAdapter {
+		public void mouseMoved(MouseEvent me) {
+			// show the tips including the owner
+			int index = dataList.locationToIndex(me.getPoint());
+			if (index > -1) {
+				Object value = dataList.getModel().getElementAt(index);
+				if ( null != value && !"".equals(value)) {
+					String selectName = value.toString();
+					SecurityData sd = dataManage.getSecurityData(selectName);
+					dataList.setToolTipText("<html>" 
+								+ "文件名: " + selectName 
+								+ "<p>拥有者: " + sd.getBasic().getOwner()
+								+ "<p>创建时间: " + sd.getBasic().getCreateTime()
+								+ "<p>更新时间: " + sd.getBasic().getLastUpdateTime()
+								+ "</html>");
+				}
+				else {
+					dataList.setToolTipText(null);
+				}
+			}
+		}
+		
 	}
 	
 	private class TrackTableModel extends AbstractTableModel {

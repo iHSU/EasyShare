@@ -5,6 +5,9 @@ import java.util.Map;
 
 import org.junit.Test;
 
+import security.container.io.HttpClientUtil;
+import security.container.io.Transfer;
+
 public class DownloadTaskTest {
 
 	@Test
@@ -14,7 +17,7 @@ public class DownloadTaskTest {
 		params.put("fileName", "mysql.txt.cipher");
 		int transferred = 0;
 		int amount = 0;
-//		HttpClientUtil.download(url, params, "UTF-8", transferred, amount, "d:/mysql.txt.cipher");
+		HttpClientUtil.download(url, params, "UTF-8", new Transfer(), "d:/mysql.txt.cipher");
 		System.out.println(transferred+"-"+amount);
 	}
 

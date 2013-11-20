@@ -3,12 +3,12 @@ package org.nlsde.ac.ui;
 import java.awt.BorderLayout;
 import java.awt.event.ActionEvent;
 import java.awt.event.ActionListener;
-import java.io.IOException;
 
 import javax.swing.JFileChooser;
 import javax.swing.JMenu;
 import javax.swing.JMenuBar;
 import javax.swing.JMenuItem;
+import javax.swing.JPanel;
 
 import org.apache.commons.logging.Log;
 import org.apache.commons.logging.LogFactory;
@@ -30,8 +30,9 @@ public class UIMenu {
 	}
 
 	private void initialize() {
+		JPanel menuPanel = new JPanel();
+		menuPanel.setLayout(new BorderLayout());
 		menuBar = new JMenuBar();
-		parent.add(menuBar, BorderLayout.NORTH);
 		
 		fileChooser = new JFileChooser();
 		fileChooser.setFileSelectionMode(JFileChooser.DIRECTORIES_ONLY);
@@ -52,7 +53,7 @@ public class UIMenu {
 			
 			@Override
 			public void actionPerformed(ActionEvent arg0) {
-				
+				logger.debug("workspace changed");
 //				int intRetVal = fileChooser.showOpenDialog(parent);
 //				if (intRetVal == JFileChooser.APPROVE_OPTION) {
 //					String watchDir = fileChooser.getSelectedFile().getAbsolutePath();
@@ -72,5 +73,12 @@ public class UIMenu {
 		helpMenu = new JMenu("帮助");
 		helpMenu.setMnemonic('H');
 		menuBar.add(helpMenu);
+		
+		menuPanel.add(menuBar, BorderLayout.CENTER);
+		JMenuBar userBar = new JMenuBar();
+		JMenu userMenu = new JMenu("欢迎, " + parent.getSimpleContainer().getId());
+		userBar.add(userMenu);
+		menuPanel.add(userBar, BorderLayout.EAST);
+		parent.add(menuPanel, BorderLayout.NORTH);
 	}
 }

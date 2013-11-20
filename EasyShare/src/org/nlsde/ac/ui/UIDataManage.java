@@ -31,7 +31,10 @@ import org.apache.commons.logging.LogFactory;
 import org.nlsde.ac.service.DownloadTask;
 import org.nlsde.ac.service.UploadTask;
 
+import security.container.intercepter.ProxyFactory;
+import security.container.intercepter.TracksProxyHandler;
 import security.container.intercepter.TransferTask;
+import security.container.io.HttpClientUtil;
 import security.container.manage.SecurityDataManage;
 import security.container.model.SecurityData;
 import security.container.util.FileUtil;
@@ -44,12 +47,14 @@ public class UIDataManage extends JPanel implements ActionListener,
 	private static final long serialVersionUID = 1L;
 	private UITabPane parent;
 	private String targetSrc;
+	private String userID;
 
 	private JList<String> localDataList;
 	private JList<String> cloudDataList;
 	private JButton btnShare;
 	private JButton btnDownload;
 	private JButton btnUpdate;
+	private JButton btnRefresh;
 
 	private SecurityDataManage dataManage;
 	private String selectLocalItem;
@@ -64,6 +69,7 @@ public class UIDataManage extends JPanel implements ActionListener,
 		this.parent.getMainWindow().getSimpleContainer()
 				.getSecurityDataManage().getWatcher().addObserver(this);
 		this.targetSrc = dataManage.getTargetSrc();
+		this.userID = parent.getMainWindow().getSimpleContainer().getId();
 		this.selectCloudItem = null;
 		this.selectLocalItem = null;
 
@@ -80,8 +86,9 @@ public class UIDataManage extends JPanel implements ActionListener,
 		localDataList = new JList<String>();
 		localDataList.setListData(dataManage.getAbleSecurityVectorDatas());
 		localDataList.addListSelectionListener(this);
-		localDataList.addMouseListener(new MouseListListener());
+		localDataList.addMouseListener(new ListClickListener());
 		localDataList.setSelectionMode(ListSelectionModel.SINGLE_SELECTION);
+		localDataList.addMouseMotionListener(new LocalDataTipsListener());
 
 		JScrollPane leftJSP = new JScrollPane(localDataList);
 		leftJSP.setPreferredSize(new Dimension(340, 400));
@@ -121,11 +128,17 @@ public class UIDataManage extends JPanel implements ActionListener,
 		cloudDataList = new JList<String>();
 		cloudDataList.setListData(dataManage.getCloudVectorDatas());
 		cloudDataList.addListSelectionListener(this);
-
+//		cloudDataList.addMouseMotionListener(new CloudDataTipsListener());
 
 		JScrollPane rightJSP = new JScrollPane(cloudDataList);
 		rightJSP.setPreferredSize(new Dimension(340, 400));
 		rightJSP.setBorder(BorderFactory.createTitledBorder("云端密文数据"));
+		JPanel refreshPanel = new JPanel();
+		refreshPanel.setLayout(new BorderLayout());
+		btnRefresh = new JButton("刷新");
+		btnRefresh.addActionListener(this);
+		refreshPanel.add(btnRefresh, BorderLayout.EAST);
+		rightPanel.add(refreshPanel, BorderLayout.NORTH);
 		rightPanel.add(rightJSP, BorderLayout.CENTER);
 
 		this.add(rightPanel, BorderLayout.EAST);
@@ -164,10 +177,43 @@ public class UIDataManage extends JPanel implements ActionListener,
 				JOptionPane.showMessageDialog(this, "请先选择需要共享的文件");
 				return;
 			}
-			startUploadTask();
+			String path = this.targetSrc + "/" + this.selectLocalItem;
+			TracksProxyHandler handler = new TracksProxyHandler(this, userID, this.targetSrc);
+			TransferTask proxy = (TransferTask) ProxyFactory.getProxy(this, handler);
+			proxy.startUploadTask(path);
 		}
 		else if (obj == btnUpdate) {
-			// TODO update the cipher
+			
+			if (this.selectLocalItem == null) {
+				JOptionPane.showMessageDialog(this, "请先选择需要共享的文件");
+				return;
+			}
+			String path = this.targetSrc + "/" + this.selectLocalItem;
+			// 判断本地文件是否为最新文件
+			SecurityData sd = (SecurityData) FileUtil.readObjFromFile(path);
+			String url = "http://security.ihsu.net:8080/SecurityServer/datauser.do?action=fileLastUpdateTime";
+			Map<String, String> params = new HashMap<String, String>();
+			params.put("fileName", this.selectLocalItem);
+			String result = HttpClientUtil.get(url, params, "UTF-8");
+			if (result != null && "success".equals(result)) {
+				long localTime = sd.getBasic().getLastUpdateTime().getTime();
+				long cloudTime = Long.parseLong(result.split("-")[1]);
+				if (localTime >= cloudTime) {
+					// use the proxy to handle the update method.
+					TracksProxyHandler handler = new TracksProxyHandler(this, userID, this.targetSrc);
+					TransferTask proxy = (TransferTask) ProxyFactory.getProxy(this, handler);
+					proxy.startUpdateTask(path);
+				}
+				else {
+					JOptionPane.showMessageDialog(this, "云端数据版本高于本地数据，请先同步云端数据");
+					return;
+				}
+			}
+			else {
+				logger.debug("acquire cloud data update time failed.");
+				return;
+			}
+			
 		}
 		else if (obj == btnDownload) {
 			if (dataManage.isLocalContainsFile(selectCloudItem)) {
@@ -181,11 +227,19 @@ public class UIDataManage extends JPanel implements ActionListener,
 			}
 			startDownloadTask();
 		}
+		else if (obj == btnRefresh) {
+			// update the cloud file data list.
+			dataManage.updateCloudDatas();
+			SystemUtil.sleep(1000);
+			cloudDataList.setListData(dataManage.getCloudVectorDatas());
+			cloudDataList.updateUI();
+			logger.info("The Cloud Data List updated.");
+		}
 	}
 
-	public void startUploadTask() {
+	public void startUploadTask(String path) {
 		String url = "http://security.ihsu.net:8080/SecurityServer/datauser.do?action=upload";
-		String path = this.targetSrc + "/" + this.selectLocalItem;
+//		String path = this.targetSrc + "/" + this.selectLocalItem;
 		Map<String, String> params = new HashMap<String, String>();
 		params.put("owner", parent.getMainWindow().getSimpleContainer()
 				.getId());
@@ -214,13 +268,41 @@ public class UIDataManage extends JPanel implements ActionListener,
 			}
 		});
 		timer.start();
+	}
+	
+	public void startUpdateTask(String path) {
+		String url = "http://security.ihsu.net:8080/SecurityServer/datauser.do?action=update";
+		Map<String, String> params = new HashMap<String, String>();
 		
+		final UploadTask ut = new UploadTask(url, path, params, dataManage, cloudDataList);
+		final Thread targetThread = new Thread(ut);
+		targetThread.start();
+		final ProgressMonitor dialog = new ProgressMonitor(this, "正在更新",
+				"已经更新：", 0, (int) ut.getAmount());
+		timer = new Timer(300, new ActionListener() {
+			public void actionPerformed(ActionEvent e) {
+				logger.debug("transferred " + ut.getTransferred());
+				dialog.setProgress((int) ut.getTransferred());
+				double percent = (double)ut.getTransferred()/ut.getAmount()*100;
+				dialog.setNote("已经更新：" + (double)(Math.round(percent)) + "%");
+				if (dialog.isCanceled()) {
+					timer.stop();
+					targetThread.interrupt();
+				}
+				// accomplished the upload, stop the time
+				if (ut.getAmount() <= ut.getTransferred()) {
+					timer.stop();
+				}
+			}
+		});
+		timer.start();
 	}
 
 	public void startDownloadTask() {
 		String url = "http://security.ihsu.net:8080/SecurityServer/datauser.do?action=download";
 		Map<String, String> params = new HashMap<String, String>();
 		params.put("fileName", this.selectCloudItem);
+		params.put("user", parent.getMainWindow().getSimpleContainer().getId());
 		final String targetPath = this.targetSrc + "/" + this.selectCloudItem;
 		final File tempFile;
 		try {
@@ -255,7 +337,7 @@ public class UIDataManage extends JPanel implements ActionListener,
 		}
 	}
 
-	private class MouseListListener extends MouseAdapter {
+	class ListClickListener extends MouseAdapter {
 		private JList<String> localDataList;
 
 		// the return value of e.getButton() is 1，2，3
@@ -290,7 +372,54 @@ public class UIDataManage extends JPanel implements ActionListener,
 			}
 		}
 	}
-
+	
+	class LocalDataTipsListener extends MouseAdapter {
+		public void mouseMoved(MouseEvent me) {
+			// show the tips including the owner
+			int index = localDataList.locationToIndex(me.getPoint());
+			if (index > -1) {
+				Object value = localDataList.getModel().getElementAt(index);
+				if ( null != value && !"".equals(value)) {
+					String selectName = value.toString();
+					SecurityData sd = dataManage.getSecurityData(selectName);
+					localDataList.setToolTipText("<html>" 
+								+ "文件名: " + selectName 
+								+ "<p>拥有者: " + sd.getBasic().getOwner()
+								+ "<p>创建时间: " + sd.getBasic().getCreateTime()
+								+ "<p>更新时间: " + sd.getBasic().getLastUpdateTime()
+								+ "</html>");
+				}
+				else {
+					localDataList.setToolTipText(null);
+				}
+			}
+		}
+		
+	}
+	
+	class CloudDataTipsListener extends MouseAdapter {
+		public void mouseMoved(MouseEvent me) {
+			// show the tips including the owner
+			int index = cloudDataList.locationToIndex(me.getPoint());
+			if (index > -1) {
+				Object value = cloudDataList.getModel().getElementAt(index);
+				if ( null != value && !"".equals(value)) {
+					String selectName = value.toString();
+					SecurityData sd = dataManage.getSecurityData(selectName);
+					cloudDataList.setToolTipText("<html>" 
+							+ "文件名: " + selectName 
+							+ "<p>拥有者: " + sd.getBasic().getOwner()
+							+ "<p>创建时间: " + sd.getBasic().getCreateTime()
+							+ "<p>更新时间: " + sd.getBasic().getLastUpdateTime()
+							+ "</html>");
+				}
+				else {
+					cloudDataList.setToolTipText(null);
+				}
+			}
+		}
+		
+	}
 	/**
 	 * when file changed on the target folder, trigger this function.
 	 */

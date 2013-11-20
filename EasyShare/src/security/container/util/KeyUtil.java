@@ -80,6 +80,7 @@ public class KeyUtil {
 		return tmp;
 	}
 	
+	@SuppressWarnings("unused")
 	private List<Pair> getExtendAttributes(String ctFile) {
 		List<Pair> attrs = new ArrayList<Pair>();
 		try {

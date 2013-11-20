@@ -3,7 +3,7 @@ package security.container.model;
 import java.io.Serializable;
 import java.sql.Timestamp;
 
-public class FacetTrack implements Serializable {
+public class FacetTrack implements Serializable, Comparable<FacetTrack> {
 	private static final long serialVersionUID = 1L;
 	public static final String TYPE_READ = "R";
 	public static final String TYPE_WRITE = "W";
@@ -107,6 +107,12 @@ public class FacetTrack implements Serializable {
 	 */
 	public void setReservation(String reservation) {
 		this.reservation = reservation;
+	}
+
+	@Override
+	public int compareTo(FacetTrack arg0) {
+		
+		return this.recordTime.compareTo(arg0.getRecordTime());
 	}
 
 }

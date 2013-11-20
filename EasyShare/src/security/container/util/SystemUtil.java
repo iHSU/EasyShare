@@ -88,8 +88,26 @@ public class SystemUtil {
 		}
 	}
 	
+	public static String getTempFile(String suffix) {
+		try {
+			File f = File.createTempFile("tmp", suffix);
+			// f.deleteOnExit();
+			return f.getAbsolutePath();
+		} catch (IOException e) {
+			return "";
+		}
+	}
+	
 	public static void deleteFile(String filePath) {
 		execute("cmd /c del " + filePath + " /q");
+	}
+	
+	public static void sleep(long time) {
+		try {
+			Thread.sleep(time);
+		} catch (InterruptedException e) {
+			e.printStackTrace();
+		}
 	}
 	
 	public static void executeByCMD(String command) {

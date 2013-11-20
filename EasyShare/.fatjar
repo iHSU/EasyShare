@@ -1,0 +1,14 @@
+#Fat Jar Configuration File
+#Tue Nov 19 22:21:09 CST 2013
+onejar.license.required=true
+manifest.classpath=
+manifest.removesigners=true
+onejar.checkbox=false
+jarname=EasyShare_fat.jar
+manifest.mergeall=true
+manifest.mainclass=org.nlsde.ac.EasyShare
+manifest.file=<createnew>
+jarname.isextern=false
+onejar.expand=
+excludes=
+includes=<inc|EasyShare/images>;<inc|EasyShare/config>

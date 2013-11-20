@@ -25,6 +25,7 @@ public class SecurityData implements Serializable {
 	private FacetPolicy policy;
 	private List<FacetTrack> accessTracks;
 	private List<FacetTrack> readWriteTracks;
+	private byte[] aesKey;
 	
 	public SecurityData() {
 		accessTracks = new ArrayList<FacetTrack>();
@@ -122,5 +123,19 @@ public class SecurityData implements Serializable {
 	 */
 	public void setReadWriteTracks(List<FacetTrack> readWriteTracks) {
 		this.readWriteTracks = readWriteTracks;
+	}
+
+	/**
+	 * @return the aesKey
+	 */
+	public byte[] getAesKey() {
+		return aesKey;
+	}
+
+	/**
+	 * @param aesKey the aesKey to set
+	 */
+	public void setAesKey(byte[] aesKey) {
+		this.aesKey = aesKey;
 	}
 }

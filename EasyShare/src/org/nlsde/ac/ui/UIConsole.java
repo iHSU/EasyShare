@@ -21,6 +21,9 @@ import security.container.encrypt.Decryptor;
 import security.container.encrypt.Encryptor;
 import security.container.encrypt.impl.IBE;
 import security.container.encrypt.impl.SecurityFactory;
+import security.container.intercepter.EncryptTask;
+import security.container.intercepter.ProxyFactory;
+import security.container.intercepter.TracksProxyHandler;
 import security.container.manage.FileSystemEvent;
 import security.container.model.FacetBasic;
 import security.container.model.FacetCipher;
@@ -33,7 +36,7 @@ import security.container.util.KeyUtil;
 import security.container.util.PolicyUtil;
 import security.container.util.SystemUtil;
 
-public class UIConsole extends JTextArea implements Observer {
+public class UIConsole extends JTextArea implements Observer, EncryptTask {
 	private static final long serialVersionUID = 1L;
 	private static Log logger = LogFactory.getLog(UIConsole.class);
 
@@ -42,6 +45,10 @@ public class UIConsole extends JTextArea implements Observer {
 	private String targetSrc;
 	private String userID;
 	private Map<String, String> handledFiles;	// store the plan file <Plantext, Cipher>
+	
+	// 文件更新时产生两个Modify事件，设定定时器（目的:只处理一次）
+	private int modifyCount = 0;
+
 
 	public UIConsole(UITabPane _parent) {
 		this.parent = _parent;
@@ -79,12 +86,17 @@ public class UIConsole extends JTextArea implements Observer {
 		FileSystemEvent event = (FileSystemEvent) fileSystemEvent;
 		// the trigger to encrypt or decrypt.
 		if (event.getEventKind().name().equals("ENTRY_CREATE")) {
+			logger.debug("---------->ENTRY_CREATE.");
 			String fileName = event.getFilePath();
 			String fileType = fileName.substring(fileName.lastIndexOf("."));
 			
 			// find a d cipher and auto-decrypt.
 			if (fileType.equals(".cipher") && !isHandled(fileName)) {
-				decryptProcess(fileName);
+				// 使用代理方式解密，嵌入拦截器
+				TracksProxyHandler handler = new TracksProxyHandler(this, 
+						this.userID, this.targetSrc, this.factory);
+				EncryptTask encryptTask = (EncryptTask) ProxyFactory.getProxy(this, handler);
+				encryptTask.decryptProcess(fileName);
 			}
 			// auto-encrypt
 			else if (!fileType.equals(".cipher") && !isHandled(fileName)) {
@@ -92,6 +104,7 @@ public class UIConsole extends JTextArea implements Observer {
 			}
 		} 
 		else if (event.getEventKind().name().equals("ENTRY_DELETE")) {
+			logger.debug("---------->ENTRY_DELETE.");
 			String fileName = event.getFilePath();
 			String fileType = fileName.substring(fileName.lastIndexOf("."));
 			// if user delete the cipher file
@@ -108,23 +121,51 @@ public class UIConsole extends JTextArea implements Observer {
 				handledFiles.remove(fileName);
 			}
 		}
+		else if (event.getEventKind().name().equals("ENTRY_MODIFY")){
+			String fileName = event.getFilePath();
+			String fileType = fileName.substring(fileName.lastIndexOf("."));
+			// if the cipher modified, don't handle
+			if (fileType.equals(".cipher")) {
+				// TODO
+				return ;
+			}
+			else {
+				if (modifyCount == 1) {
+					modifyCount = 0;
+					return;
+				}
+				modifyCount++;
+				logger.debug("---------->ENTRY_MODIFY.");
+				
+				String path = this.targetSrc + "/" + fileName;
+				String correspondCipherPath = path + ".cipher";
+				SecurityData sd = (SecurityData) FileUtil.readObjFromFile(correspondCipherPath);
+				sd.getBasic().setLastUpdateTime(new Timestamp(new Date().getTime()));
+				String aesKeyTemp = SystemUtil.getTempFileName(Constants.TEMP_PATH, ".aes"); 
+				FileUtil.readBytes(sd.getAesKey(), aesKeyTemp);
+				
+				String cipherTempPath = SystemUtil.getTempFileName(Constants.WORK_SPACE, ".cipher");
+				Encryptor aesEncrypt = (Encryptor) factory.get(SecurityFactory.AES_ENCRYPT);
+				boolean res = aesEncrypt.encrypt(path, cipherTempPath, aesKeyTemp);
+				if(!res) {
+					logger.info("AES Encrypt Failed.");
+					this.append("AES加密失败，待加密文件已被移除.\n");
+					return ;
+				}
+				sd.getCipher().setDataCipher(FileUtil.writeToBytes(cipherTempPath));
+				
+				FileUtil.deleteFile(aesKeyTemp);
+				FileUtil.deleteFile(cipherTempPath);
+				
+				FileUtil.writeObjToFile(sd, correspondCipherPath);
+			}
+		}
 		else {
-//			this.append("Other events: ");
-//			this.append(event.getFilePath() + " has been "
-//					+ event.getEventKind().name());
-//			this.append("\n");
-//			try {
-//				Thread.sleep(1000);
-//			} catch (InterruptedException e) {
-//				e.printStackTrace();
-//			}
-//			this.paintImmediately(this.getBounds());
-//			logger.info(event.getFilePath() + " has been "
-//					+ event.getEventKind().name());
+			
 		}
 	}
 
-	private void encryptProcess(String fileName) {
+	public void encryptProcess(String fileName) {
 		// 1. Acquire the default policy file
 		Policy defaultPolicy = this.parent.getMainWindow().getSimpleContainer()
 				.getConfigurationManage().getDefaultPolicy();
@@ -169,7 +210,7 @@ public class UIConsole extends JTextArea implements Observer {
 		readWriteTrack.setLog("文件创建");
 		readWriteTrack.setOperator(FacetTrack.OPERATOR_USER + "|" + this.userID);
 		readWriteTrack.setRecordTime(new Timestamp(new Date().getTime()));
-		readWriteTrack.setType(FacetTrack.TYPE_WRITE);
+		readWriteTrack.setType(FacetTrack.TYPE_CREATE);
 		readWriteTrack.setReservation("Reservation");
 		readWriteTrack.setVersion("Version 1");
 		rwTracks.add(readWriteTrack);
@@ -208,20 +249,13 @@ public class UIConsole extends JTextArea implements Observer {
 		fb.setMD5(FileUtil.getMD5(planPath));
 		fb.setSize(new File(planPath).length());
 		
-		FacetTrack accessTrack = new FacetTrack();
-		accessTrack.setLog("文件创建");
-		accessTrack.setOperator(FacetTrack.OPERATOR_USER + "|" + this.userID);
-		accessTrack.setRecordTime(new Timestamp(new Date().getTime()));
-		accessTrack.setType(FacetTrack.TYPE_CREATE);
-		accessTrack.setReservation("Reservation");
-		accessTrack.setVersion("Version 1");
-		
 		SecurityData sd = new SecurityData();
 		sd.setPolicy(fp);
 		sd.setCipher(fc);
-		sd.addAccessTrack(accessTrack);
 		sd.setReadWriteTracks(rwTracks);
 		sd.setBasic(fb);
+		// Temporally stored, when shared to cloud, remove it.
+		sd.setAesKey(FileUtil.writeToBytes(Constants.TEMP_KEY_AES)); 
 		
 		String cipherPath = planPath + ".cipher";
 		FileUtil.writeObjToFile(sd, cipherPath);
@@ -229,14 +263,16 @@ public class UIConsole extends JTextArea implements Observer {
 		this.append(fileName + ": 文件加密成功.\n");
 		this.paintImmediately(this.getBounds());
 		
-		String cipherFileName = cipherPath.substring(cipherPath.lastIndexOf("/") + 1, cipherPath.length());
+		String cipherFileName = cipherPath.substring(cipherPath.lastIndexOf("/") + 1,
+				cipherPath.length());
 		this.append("获得密文为: " + cipherFileName + ".\n");
 		this.paintImmediately(this.getBounds());
 		
 		handledFiles.put(fileName, cipherFileName);
 	}
+	
 
-	private void decryptProcess(String fileName) {
+	public boolean decryptProcess(String fileName) {
 		
 		this.append("发现一个新的密文: " + fileName + "\n");
 		this.paintImmediately(this.getBounds());
@@ -244,17 +280,31 @@ public class UIConsole extends JTextArea implements Observer {
 
 		File cipherFile = new File(this.targetSrc + "/" + fileName);
 		SecurityData sd = (SecurityData) FileUtil.readObjFromFile(cipherFile);
+		if (sd == null) {
+			this.append(fileName + "为非法密文\n");
+			this.paintImmediately(this.getBounds());
+			logger.debug("非法密文结构");
+			return false;
+		}
 
 		this.append("向安全服务器申请ABE私钥\n");
 		this.paintImmediately(this.getBounds());
 		logger.info("Request the abe key.");
+		
 		String url = "http://security.ihsu.net:8080/SecurityServer/key.do?action=key";
 		String id = IBE.authorOfKey(Constants.KEY_IBE_PRIVATE);
 		String abe_key_pack = KeyUtil.getABEKey(url, id);
+		if (abe_key_pack == null || abe_key_pack.equals("")) {
+			this.append("申请ABE私钥失败\n");
+			this.paintImmediately(this.getBounds());
+			logger.debug("Failed to Get the abe private key.");
+			return false;
+		}
 
 		this.append("获取ABE私钥成功\n");
 		this.paintImmediately(this.getBounds());
 		logger.info("Get the abe key.");
+		
 		String[] tmp = KeyUtil.unpack(abe_key_pack);
 		String abe_key_ibe_sign = tmp[0];
 		String abe_key_ibe_cipher = tmp[1];
@@ -276,6 +326,12 @@ public class UIConsole extends JTextArea implements Observer {
 			flag = abeDecrypt.decrypt(Constants.TEMP_KEY_AES_CIPHER,
 					Constants.TEMP_KEY_AES_DEC, Constants.TEMP_KEY_ABE);
 		}
+		else {
+			this.append("IBE解密ABE私钥失败\n");
+			this.paintImmediately(this.getBounds());
+			logger.debug("Failed to decrypt the abe private key by IBE.");
+			return false;
+		}
 
 		if (flag) {
 			Decryptor aesDecrypt = (Decryptor) factory
@@ -286,7 +342,7 @@ public class UIConsole extends JTextArea implements Observer {
 			
 			String cipherTemp = SystemUtil.getTempFileName(Constants.WORK_SPACE, ".tmp");
 			FileUtil.readBytes(sd.getCipher().getDataCipher(), cipherTemp);					
-			aesDecrypt.decrypt(cipherTemp, decPath, Constants.TEMP_KEY_AES);
+			flag = aesDecrypt.decrypt(cipherTemp, decPath, Constants.TEMP_KEY_AES);
 			FileUtil.deleteFile(cipherTemp);
 			String decFileName = decPath.substring(decPath.lastIndexOf("\\") + 1, decPath.length());
 			handledFiles.put(decFileName, fileName);
@@ -299,14 +355,23 @@ public class UIConsole extends JTextArea implements Observer {
 			@SuppressWarnings("unchecked")
 			List<FacetTrack> rwTracks = (List<FacetTrack>) FileUtil.readObjFromFile(trackTemp);
 			sd.setReadWriteTracks(rwTracks);
+			// add the aes key to the cipher.
+			sd.setAesKey(FileUtil.writeToBytes(Constants.TEMP_KEY_AES));
 			FileUtil.writeObjToFile(sd, srcFile.getAbsolutePath());
 			
 			FileUtil.deleteFile(trackCipherTemp);
 			FileUtil.deleteFile(trackTemp);
 		}
+		else {
+			this.append("ABE解密失败\n");
+			this.paintImmediately(this.getBounds());
+			logger.debug("Failed to decrypt of ABE.");
+			return false;
+		}
 
 		this.append( fileName + " 解密成功.\n");
 		this.paintImmediately(this.getBounds());
 		logger.info("Decrypted Successfully.");
+		return true;
 	}
 }

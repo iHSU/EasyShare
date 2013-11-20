@@ -13,6 +13,7 @@ import security.container.util.FileUtil;
 import security.container.util.KeyUtil;
 
 public class SecurityFactoryTest {
+	@SuppressWarnings("unused")
 	@Test
 	public void test() throws IOException {
 

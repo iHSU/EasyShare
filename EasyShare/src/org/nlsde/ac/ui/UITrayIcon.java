@@ -25,9 +25,9 @@ public class UITrayIcon {
 		if (SystemTray.isSupported()) {
 			SystemTray tray = SystemTray.getSystemTray();
 			PopupMenu popuMenu = new PopupMenu();
-			MenuItem exitItem = new MenuItem("Exit");
-			MenuItem sysconfigItem = new MenuItem("System Config");
-			MenuItem openItem = new MenuItem("Main");
+			MenuItem exitItem = new MenuItem("退出");
+			MenuItem sysconfigItem = new MenuItem("系统配置");
+			MenuItem openItem = new MenuItem("主菜单");
 
 			popuMenu.add(openItem);
 			popuMenu.add(sysconfigItem);
@@ -45,11 +45,9 @@ public class UITrayIcon {
 						showIconTray(true);
 					}
 				}
-
 			});
 
 			exitItem.addActionListener(new ActionListener() {
-
 				@Override
 				public void actionPerformed(ActionEvent ae) {
 					try {
@@ -58,17 +56,21 @@ public class UITrayIcon {
 						e.printStackTrace();
 					}
 				}
-
 			});
 
 			openItem.addActionListener(new ActionListener() {
-
 				@Override
 				public void actionPerformed(ActionEvent e) {
 					showIconTray(true);
-
 				}
-
+			});
+			
+			sysconfigItem.addActionListener(new ActionListener() {
+				@Override
+				public void actionPerformed(ActionEvent ae) {
+					parent.getTabPane().setSelectedIndex(3);
+					showIconTray(true);					
+				}
 			});
 
 			try {
@@ -85,6 +87,5 @@ public class UITrayIcon {
 		if (parent.isVisible() != b) {
 			parent.setVisible(b);
 		}
-
 	}
 }
